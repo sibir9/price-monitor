@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Мониторинг цен</title>
+    <style>
+        body { font-family: Arial; max-width: 800px; margin: 50px auto; padding: 20px; }
+        textarea, input { width: 100%; padding: 10px; margin: 10px 0; }
+        button { background: #007bff; color: white; padding: 10px 20px; border: none; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Мониторинг цен конкурентов</h1>
+    <form method="POST" action="/scrape" id="form">
+        <label>Название товара:</label>
+        <input type="text" name="product_name" required>
+        <label>Сайты (по одному на строку):</label>
+        <textarea name="urls" rows="5" required></textarea>
+        <button type="submit">Найти цены</button>
+    </form>
+    <div id="results"></div>
+    <script>
+        document.getElementById('form').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const response = await fetch('/scrape', { method: 'POST', body: formData });
+            const data = await response.json();
+            let html = '<h2>Результаты</h2><table><tr><th>Сайт</th><th>Цена</th></tr>';
+            data.results.forEach(r => {
+                html += `<tr><td>${new URL(r.url).hostname}</td><td>${r.found ? r.price + ' ₽' : r.price}</td></tr>`;
+            });
+            html += '</table>';
+            document.getElementById('results').innerHTML = html;
+        };
+    </script>
+</body>
+</html>
