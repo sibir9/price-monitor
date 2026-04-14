@@ -1,38 +1,303 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-    <title>Мониторинг цен</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мониторинг цен конкурентов</title>
     <style>
-        body { font-family: Arial; max-width: 800px; margin: 50px auto; padding: 20px; }
-        textarea, input { width: 100%; padding: 10px; margin: 10px 0; }
-        button { background: #007bff; color: white; padding: 10px 20px; border: none; cursor: pointer; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+        }
+        
+        .form-container {
+            padding: 30px;
+        }
+        
+        label {
+            display: block;
+            font-weight: 600;
+            margin: 20px 0 8px 0;
+            color: #333;
+        }
+        
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+            font-family: inherit;
+        }
+        
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            width: 100%;
+            margin-top: 30px;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e0e0e0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .results {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px solid #e0e0e0;
+            display: none;
+        }
+        
+        .cheapest {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .cheapest strong {
+            font-size: 20px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        
+        .price-found {
+            color: #28a745;
+            font-weight: 600;
+            font-size: 16px;
+        }
+        
+        .price-error {
+            color: #dc3545;
+        }
+        
+        .url-cell {
+            word-break: break-all;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .info {
+            margin-top: 15px;
+            padding: 10px;
+            background: #e3f2fd;
+            border-radius: 10px;
+            font-size: 14px;
+            color: #1976d2;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
-    <h1>🔍 Мониторинг цен конкурентов</h1>
-    <form method="POST" action="/scrape" id="form">
-        <label>Название товара:</label>
-        <input type="text" name="product_name" required>
-        <label>Сайты (по одному на строку):</label>
-        <textarea name="urls" rows="5" required></textarea>
-        <button type="submit">Найти цены</button>
-    </form>
-    <div id="results"></div>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Мониторинг цен конкурентов</h1>
+            <p>Сравните цены на товары в разных магазинах за секунды</p>
+        </div>
+        
+        <div class="form-container">
+            <form id="scrapeForm">
+                <label>📦 Название товара</label>
+                <input type="text" id="productName" placeholder="Например: iPhone 15 128GB" required>
+                
+                <label>🔗 Сайты конкурентов (по одному на строку, до 10 шт)</label>
+                <textarea id="urls" rows="6" placeholder="https://example.com/product/iphone-15&#10;https://shop.ru/catalog/iphone-15&#10;https://store.com/iphone-15" required></textarea>
+                
+                <button type="submit">🚀 Найти лучшую цену</button>
+            </form>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Парсим цены... Это может занять до 15 секунд</p>
+            </div>
+            
+            <div class="results" id="results"></div>
+        </div>
+    </div>
+
     <script>
-        document.getElementById('form').onsubmit = async (e) => {
+        document.getElementById('scrapeForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const formData = new FormData(e.target);
-            const response = await fetch('/scrape', { method: 'POST', body: formData });
-            const data = await response.json();
-            let html = '<h2>Результаты</h2><table><tr><th>Сайт</th><th>Цена</th></tr>';
-            data.results.forEach(r => {
-                html += `<tr><td>${new URL(r.url).hostname}</td><td>${r.found ? r.price + ' ₽' : r.price}</td></tr>`;
+            
+            const productName = document.getElementById('productName').value;
+            const urls = document.getElementById('urls').value;
+            
+            if (!productName || !urls) {
+                alert('Пожалуйста, заполните все поля');
+                return;
+            }
+            
+            // Показываем загрузку
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+            
+            const formData = new URLSearchParams();
+            formData.append('product_name', productName);
+            formData.append('urls', urls);
+            
+            try {
+                const response = await fetch('/scrape', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Ошибка сервера: ' + response.status);
+                }
+                
+                const data = await response.json();
+                displayResults(data);
+            } catch (error) {
+                document.getElementById('results').innerHTML = `
+                    <div class="cheapest" style="background:#dc3545">
+                        ❌ Ошибка: ${error.message}
+                    </div>
+                `;
+                document.getElementById('results').style.display = 'block';
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        });
+        
+        function displayResults(data) {
+            let html = '';
+            
+            if (data.cheapest) {
+                const hostname = new URL(data.cheapest.url).hostname.replace('www.', '');
+                html += `
+                    <div class="cheapest">
+                        🏆 ЛУЧШАЯ ЦЕНА: <strong>${data.cheapest.price} ₽</strong><br>
+                        <small>${hostname}</small>
+                    </div>
+                `;
+            }
+            
+            html += '<h3 style="margin: 20px 0 10px 0;">📊 Результаты сравнения:</h3>';
+            html += '<table><thead><tr>';
+            html += '<th>Магазин</th>';
+            html += '<th>Цена</th>';
+            html += '</tr></thead><tbody>';
+            
+            data.results.forEach(result => {
+                let hostname;
+                try {
+                    hostname = new URL(result.url).hostname.replace('www.', '');
+                } catch(e) {
+                    hostname = result.url;
+                }
+                
+                const priceClass = result.found ? 'price-found' : 'price-error';
+                const priceText = result.found ? `${result.price} ₽` : result.price;
+                
+                html += `
+                    <tr>
+                        <td class="url-cell">${hostname}</td>
+                        <td class="${priceClass}">${priceText}</td>
+                    </tr>
+                `;
             });
-            html += '</table>';
+            
+            html += '</tbody></table>';
+            html += `<div class="info">✅ Найдено цен: ${data.total_found} из ${data.results.length}</div>`;
+            
             document.getElementById('results').innerHTML = html;
-        };
+            document.getElementById('results').style.display = 'block';
+            
+            // Прокручиваем к результатам
+            document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
     </script>
 </body>
 </html>
