@@ -1,0 +1,23 @@
+nohup: ignoring input
+INFO:     Started server process [240251]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8002 (Press CTRL+C to quit)
+INFO:__main__:=== btk-russia.ru | Ищем: '2RS' ===
+INFO:__main__:✅ Цена по .price: 286.29 руб. (raw: '286.29руб./шт')
+INFO:     176.126.51.99:2870 - "POST /scrape HTTP/1.1" 200 OK
+INFO:__main__:=== www.onlinetrade.ru | Ищем: '2RS' ===
+INFO:__main__:❌ Товар '2RS' не найден
+INFO:__main__:=== spb.snabservis.ru | Ищем: '2RS' ===
+INFO:__main__:✅ Цена по .product__price: 689 руб. (raw: '689 руб./шт.')
+INFO:__main__:=== btk-russia.ru | Ищем: '2RS' ===
+INFO:__main__:✅ Цена по .price: 286.29 руб. (raw: '286.29руб./шт')
+INFO:__main__:=== iskra-rus.ru | Ищем: '2RS' ===
+INFO:__main__:✅ Цена по .product__price: 154 руб. (raw: '154 ₽154 ₽')
+INFO:__main__:=== sf2v.ru | Ищем: '2RS' ===
+INFO:__main__:✅ Найдена минимальная цена: 74 руб.
+INFO:     176.126.51.99:2900 - "POST /scrape HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [240251]
