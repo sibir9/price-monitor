@@ -66,6 +66,8 @@ async def parse_price(session, url: str, target_product: str):
                 '.card__item-price',
                 '.product-price',
                 '.current-price',
+                '.product-item-price-current',
+                '.catalog-item__price',
                 '.price',
                 '.price_value',
                 '.price_current',
