@@ -15,13 +15,10 @@ app = FastAPI(title="Price Monitor")
 ua = UserAgent()
 
 def extract_price(text):
-    """Извлекает цену из текста (поддерживает целые и дробные числа)"""
+    """Извлекает цену из текста"""
     if not text or not isinstance(text, str):
         return None, None
-    # Ищем число с рублями
-    match = re.search(r'(\d[\d\s\.]*[\d\.]+)\s*[Рр]уб', text)
-    if not match:
-        match = re.search(r'(\d[\d\s\.]*[\d\.]+)', text)
+    match = re.search(r'(\d[\d\s\.]*[\d\.]+)\s*[Рр]уб|₽', text)
     if match:
         price_str = re.sub(r'[\s,]', '', match.group(1))
         try:
@@ -29,6 +26,17 @@ def extract_price(text):
         except:
             pass
     return None, None
+
+def is_valid_text(text):
+    """Проверяет, что текст не из скрипта и не из стилей"""
+    if not text or not isinstance(text, str):
+        return False
+    if len(text) > 300:
+        return False
+    text_lower = text.lower()
+    if any(x in text_lower for x in ['function(', 'var ', 'window.', 'addEventListener', 'document.', '.style', 'bx_', 'ob', 'javascript:', 'json', 'dataLayer']):
+        return False
+    return True
 
 async def parse_price(session, url: str, target_product: str):
     headers = {'User-Agent': ua.random}
@@ -40,87 +48,121 @@ async def parse_price(session, url: str, target_product: str):
             html = await response.text()
             soup = BeautifulSoup(html, 'html.parser')
             
+            # Удаляем скрипты и стили
+            for script in soup(["script", "style", "noscript", "iframe", "svg"]):
+                script.decompose()
+            
             logger.info(f"=== {urlparse(url).netloc} | Ищем: '{target_product}' ===")
             
-            # ----- СПЕЦИАЛЬНАЯ ЛОГИКА ДЛЯ iskra-rus -----
-            if 'iskra-rus' in url:
-                price_elem = soup.select_one('#bx_117848907_13271_price')
-                if not price_elem:
-                    price_elem = soup.select_one('.product-item-detail-price-current.current')
-                if not price_elem:
-                    price_elem = soup.select_one('.current')
+            # ----- СПЕЦИАЛЬНАЯ ЛОГИКА ДЛЯ snabservis -----
+            if 'snabservis' in url:
+                price_elem = soup.select_one('span.price')
                 if price_elem:
                     price_text = price_elem.get_text(strip=True)
                     price_str, price_val = extract_price(price_text)
                     if price_str:
-                        logger.info(f"✅ iskra-rus: цена {price_str} руб.")
-                        return {
-                            'url': url,
-                            'price': price_str,
-                            'found': True,
-                            'product_found': target_product
-                        }
+                        return {'url': url, 'price': price_str, 'found': True, 'product_found': target_product}
             
-            # ----- УНИВЕРСАЛЬНЫЙ ПОИСК ПО ПРИОРИТЕТНЫМ СЕЛЕКТОРАМ -----
-            price_selectors = [
-                '.card__item-price',
-                '.product-price',
-                '.current-price',
-                '.product-item-price-current',
-                '.catalog-item__price',
-                '.price',
-                '.price_value',
-                '.price_current',
-                '.product__price',
-                '.special-price',
-                '.sale-price',
-                '[itemprop="price"]',
-                '.cost-price',
-                '.final-price'
-            ]
-            
-            for selector in price_selectors:
-                price_elem = soup.select_one(selector)
-                if price_elem:
-                    price_text = price_elem.get_text(strip=True)
-                    price_str, price_val = extract_price(price_text)
-                    if price_str:
-                        logger.info(f"✅ Цена по {selector}: {price_str} руб.")
-                        return {
-                            'url': url,
-                            'price': price_str,
-                            'found': True,
-                            'product_found': target_product
-                        }
-            
-            # ----- ПОИСК ЛЮБОЙ ЦЕНЫ НА СТРАНИЦЕ (с фильтром) -----
-            price_candidates = []
-            for elem in soup.find_all(string=re.compile(r'\d+[\s\d\.]*\d*\s*[Рр]уб')):
-                match = re.search(r'(\d[\d\s\.]*[\d\.]+)\s*[Рр]уб', elem)
-                if match:
-                    price_str_raw = match.group(1)
-                    price_str = re.sub(r'[\s,]', '', price_str_raw)
-                    try:
-                        price_val = float(price_str)
+            # ----- СПЕЦИАЛЬНАЯ ЛОГИКА ДЛЯ iskra-rus (каталог) -----
+            if 'iskra-rus' in url and '/catalog/' in url:
+                # Ищем все блоки с товарами
+                product_blocks = soup.find_all('div', class_=re.compile(r'product-item', re.I))
+                for block in product_blocks:
+                    # Название товара
+                    name_elem = block.find('a', class_=re.compile(r'name|title', re.I))
+                    if not name_elem:
+                        name_elem = block.find('span', class_=re.compile(r'name|title', re.I))
+                    if name_elem:
+                        product_name = name_elem.get_text(strip=True)
+                        if target_product.lower() in product_name.lower():
+                            # Цена в этом же блоке
+                            price_elem = block.find('p', class_=re.compile(r'price', re.I))
+                            if not price_elem:
+                                price_elem = block.find('span', class_=re.compile(r'price', re.I))
+                            if price_elem:
+                                price_text = price_elem.get_text(strip=True)
+                                price_str, price_val = extract_price(price_text)
+                                if price_str:
+                                    logger.info(f"✅ iskra: {product_name[:40]} → {price_str} руб.")
+                                    return {'url': url, 'price': price_str, 'found': True, 'product_found': product_name[:50]}
+                
+                # Если не нашли в блоках, ищем по тексту на странице
+                for elem in soup.find_all(string=True):
+                    if not is_valid_text(elem):
+                        continue
+                    if target_product.lower() in elem.lower():
                         parent = elem.find_parent()
-                        parent_text = parent.get_text().lower() if parent else ""
-                        if 'экономия' not in parent_text and 'скидка' not in parent_text:
-                            price_candidates.append((price_val, price_str))
-                    except:
-                        pass
+                        if parent:
+                            product_block = parent.find_parent('div', class_=re.compile(r'product|item|card', re.I))
+                            if product_block:
+                                price_elem = product_block.find(class_=re.compile(r'price', re.I))
+                                if price_elem:
+                                    price_text = price_elem.get_text(strip=True)
+                                    price_str, price_val = extract_price(price_text)
+                                    if price_str:
+                                        return {'url': url, 'price': price_str, 'found': True, 'product_found': elem.strip()[:50]}
             
-            if price_candidates:
-                price_candidates.sort(key=lambda x: x[0])
-                best_price = price_candidates[0][1]
-                logger.info(f"✅ Найдена минимальная цена: {best_price} руб.")
-                return {
-                    'url': url,
-                    'price': best_price,
-                    'found': True,
-                    'product_found': target_product
-                }
+            # ----- ОСНОВНАЯ ЛОГИКА -----
+            all_prices = []
+            for elem in soup.find_all(string=True):
+                if not is_valid_text(elem):
+                    continue
+                if target_product.lower() in elem.lower():
+                    product_name = elem.strip()[:60]
+                    parent = elem.find_parent()
+                    if parent:
+                        product_block = parent.find_parent('div', class_=re.compile(r'product|item|card|catalog', re.I))
+                        if not product_block:
+                            product_block = parent.find_parent('tr')
+                        if not product_block:
+                            product_block = parent
+                        
+                        price_selectors = [
+                            '.price', '.product-price', '.current-price', '.price_value',
+                            '.card__item-price', '.product-item-price-current', '.catalog-item__price',
+                            'span.price', 'div.price', '[itemprop="price"]'
+                        ]
+                        
+                        price_found = None
+                        for selector in price_selectors:
+                            try:
+                                price_elem = product_block.select_one(selector)
+                                if price_elem:
+                                    price_text = price_elem.get_text(strip=True)
+                                    price_str, price_val = extract_price(price_text)
+                                    if price_str:
+                                        price_found = (price_str, price_val)
+                                        break
+                            except:
+                                continue
+                        
+                        if not price_found:
+                            for text in product_block.find_all(string=True):
+                                if text and ('руб' in text.lower() or '₽' in text):
+                                    if is_valid_text(text):
+                                        price_str, price_val = extract_price(text)
+                                        if price_str:
+                                            price_found = (price_str, price_val)
+                                            break
+                        
+                        if price_found:
+                            all_prices.append({'price': price_found[0], 'value': price_found[1], 'product': product_name})
             
-            logger.info(f"❌ Товар '{target_product}' не найден")
+            if all_prices:
+                best = min(all_prices, key=lambda x: x['value'])
+                return {'url': url, 'price': best['price'], 'found': True, 'product_found': best['product']}
+            
+            # ----- КАРТОЧКА ТОВАРА -----
+            title = soup.find('title').get_text() if soup.find('title') else ""
+            if target_product.lower() in title.lower():
+                for selector in ['.price', '.product-price', '.current-price', '.price_value', '.card__item-price']:
+                    price_elem = soup.select_one(selector)
+                    if price_elem:
+                        price_text = price_elem.get_text(strip=True)
+                        price_str, price_val = extract_price(price_text)
+                        if price_str:
+                            return {'url': url, 'price': price_str, 'found': True, 'product_found': target_product}
+            
             return {'url': url, 'price': 'Товар не найден', 'found': False}
             
     except Exception as e:
@@ -137,30 +179,27 @@ async def home():
         <title>Мониторинг цен конкурентов</title>
         <style>
             body { font-family: Arial; max-width: 1000px; margin: 50px auto; padding: 20px; }
-            input, textarea { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; font-family: inherit; }
+            input, textarea { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; }
             button { background: #007bff; color: white; padding: 12px 24px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
-            button:hover { background: #0056b3; }
             .loading { display: none; text-align: center; padding: 20px; }
             .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #007bff; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto; }
             @keyframes spin { to { transform: rotate(360deg); } }
             .results { margin-top: 30px; display: none; }
-            .cheapest { background: #28a745; color: white; padding: 15px; border-radius: 5px; margin-bottom: 20px; text-align: center; font-size: 18px; }
+            .cheapest { background: #28a745; color: white; padding: 15px; border-radius: 5px; margin-bottom: 20px; text-align: center; }
             table { width: 100%; border-collapse: collapse; }
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-            th { background: #f5f5f5; font-weight: bold; }
-            tr:hover { background: #f9f9f9; }
+            th { background: #f5f5f5; }
             .price-found { color: #28a745; font-weight: bold; }
             .price-error { color: #dc3545; }
-            .hostname { font-family: monospace; font-size: 12px; color: #666; }
         </style>
     </head>
     <body>
         <h1>🔍 Мониторинг цен конкурентов</h1>
         <form id="scrapeForm">
-            <label>📦 Название товара (обязательно)</label>
-            <input type="text" id="productName" placeholder="Пример: 6004-2RS" required>
-            <label>🔗 Ссылки на товары конкурентов (по одной на строку)</label>
-            <textarea id="urls" rows="6" placeholder="https://btk-russia.ru/catalog/radialnye_i_radialno_upornye/6004-2rs-zkl/&#10;https://sf2v.ru/catalog/podshipnik/&#10;https://iskra-rus.ru/product/podshipnik_61806_2rs_iskra/&#10;https://spb.snabservis.ru/product/podshipnik-sharikovyj-radialnyj-606-2rs-180016-6h17h6-mm-gost-8338-75/" required></textarea>
+            <label>📦 Название товара</label>
+            <input type="text" id="productName" placeholder="Пример: 606 2RS" required>
+            <label>🔗 Ссылки на товары конкурентов</label>
+            <textarea id="urls" rows="6" placeholder="https://btk-russia.ru/catalog/radialnye_i_radialno_upornye/6004-2rs-zkl/&#10;https://sf2v.ru/catalog/podshipnik/&#10;https://iskra-rus.ru/catalog/sharikovye_podshipniki/&#10;https://spb.snabservis.ru/product/podshipnik-sharikovyj-radialnyj-606-2rs-180016-6h17h6-mm-gost-8338-75/" required></textarea>
             <button type="submit">🚀 Найти цены</button>
         </form>
         <div class="loading" id="loading"><div class="spinner"></div><p>Парсинг...</p></div>
@@ -184,16 +223,12 @@ async def home():
                         let hostname = new URL(data.cheapest.url).hostname;
                         html += `<div class="cheapest">🏆 ЛУЧШАЯ ЦЕНА: <strong>${data.cheapest.price} ₽</strong><br><small>${hostname}</small></div>`;
                     }
-                    html += '<h3>📊 Результаты сравнения</h3>';
-                    html += '<table><thead><tr><th>Магазин</th><th>Цена</th></tr></thead><tbody>';
+                    html += '<h3>📊 Результаты сравнения</h3><table><thead><tr><th>Магазин</th><th>Цена</th><th>Найденный товар</th></tr></thead><tbody>';
                     data.results.forEach(r => {
                         let hostname = new URL(r.url).hostname;
                         let priceClass = r.found ? 'price-found' : 'price-error';
                         let priceText = r.found ? `${r.price} ₽` : r.price;
-                        html += `<tr>
-                            <td class="hostname">${hostname}</td>
-                            <td class="${priceClass}">${priceText}</td>
-                        </tr>`;
+                        html += `<tr><td>${hostname}</td><td class="${priceClass}">${priceText}</td><td style="font-size:11px">${r.product_found || '-'}</td></tr>`;
                     });
                     html += '</tbody></table>';
                     document.getElementById('results').innerHTML = html;
